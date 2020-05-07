@@ -37,6 +37,9 @@ class String
   # take a string like "R1-12-47-1_tm_598;" and make it into "tm598"
   # (makes node identifiers more succinct)
   def core
+    if '0123456789'.include?(self[0])
+      self.prepend('n')
+    end
     splits = self.split('-')
     #splits[-2] + splits[-1]
     splits.join('_')
@@ -300,6 +303,17 @@ class Capacitor < Node
       'width' => '0.2',
       'height' => '0.2',
       'fillcolor' => '1'
+    })
+  end  
+end
+
+class Inverter < Node
+  def props
+    super.merge({
+      'shape' => 'doublecircle',
+      'width' => '0.2',
+      'height' => '0.2',
+      'fillcolor' => '2'
     })
   end  
 end
