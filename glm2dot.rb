@@ -58,7 +58,15 @@ module GrabInfo
     pow = 0
     # note that for multi-phase loads, we just sum the real power draw
     # across the phases
-    each {|k, v| pow += v.to_c.abs if k.to_s =~ /^(constant_)?power(_12)?/}
+    each {|k, v| pow += v.sub(/.*?\*/, '').to_c.abs if k.to_s =~ /^(constant_)power(_[A-C])_real/}
+    pow == 0 ? nil : (Math.sqrt(pow) * LOAD_SCALE).to_s
+  end
+  
+  def size_from_inverter
+    pow = 0
+    # note that for multi-phase loads, we just sum the real power draw
+    # across the phases
+    each {|k, v| pow += v.delete('^0-9').to_c.abs if k.to_s =~ /^rated_power/}
     pow == 0 ? nil : (Math.sqrt(pow) * LOAD_SCALE).to_s
   end
   
@@ -66,6 +74,12 @@ module GrabInfo
     area = 0
     each {|k, v| area += v.to_f if k.to_s =~ /^floor_area/}
     area == 0? nil : (Math.sqrt(area) * LOAD_SCALE).to_s
+  end
+  
+  def size_from_solar_area
+    area = 0
+    each {|k, v| area += v.to_f if k.to_s =~ /^area/}
+    area == 0? nil : (Math.sqrt(area) * LOAD_SCALE * 10.0).to_s
   end
   
   def get_groupid
@@ -307,38 +321,70 @@ class Capacitor < Node
   end  
 end
 
-class Inverter < Node
-  def props
-    super.merge({
-      'shape' => 'doublecircle',
-      'width' => '0.2',
-      'height' => '0.2',
-      'fillcolor' => '2'
-    })
-  end  
-end
-
 class Fuse < Edge
   def props
     super.merge({'color' => '6', 'penwidth' => '5'})
   end  
 end
 
+class Inverter < Node
+  include GrabInfo
+  
+  def props
+    p = super.merge({
+      'shape' => 'doublecircle',
+      # 'width' => '0.2',
+      # 'height' => '0.2',
+      'fillcolor' => '5'
+    })
+    size = size_from_inverter
+    p.merge({'width' => size, 'height' => size})
+  end  
+end
+
 class LineConfiguration < GLMConfig
+end
+
+# Not sure if we need to do anything with this object at this time
+class LineSpacing < GLMConfig
 end
 
 class Load < Node
   include GrabInfo
   
   def props
-    p = super.merge({
-      'shape' => 'square',
-      'fillcolor' => '2'
-    })
+    p = super
     size = size_from_power
-    p.merge({'width' => size, 'height' => size})
-  end  
+    groupid = get_groupid
+    unless size.nil?
+      if groupid == 'CommLoads'
+        p.merge!({'shape' => 'invtriangle',
+                  'fillcolor' => '2',
+                  'height' => size,
+                  'width' => size
+        })
+      else
+        p.merge!({'shape' => 'house',
+                  'fillcolor' => '1',
+                  'height' => size,
+                  'width' => size
+        })
+      end
+    end
+    p
+  end
 end
+#   include GrabInfo
+#
+#   def props
+#     p = super.merge({
+#       'shape' => 'square',
+#       'fillcolor' => '2'
+#     })
+#     size = size_from_power
+#     p.merge({'width' => size, 'height' => size})
+#   end
+# end
 
 class Meter < Node
   def props
@@ -357,11 +403,43 @@ class OverheadLine < Edge
   end  
 end
 
+# Not sure if we need to do anything with this object at this time
+class OverheadLineConductor < GLMConfig
+end
+
 class Recloser < Edge
   def props
     super.merge({'color' => '6:8:6', 'penwidth' => '3'})
   end  
 end
+
+class Solar < Node
+  include GrabInfo
+  
+  def props
+    p = super.merge({
+      'shape' => 'parallelogram',
+      # 'width' => '0.2',
+      # 'height' => '0.2',
+      'fillcolor' => '4'
+    })
+    size = size_from_solar_area
+    p.merge({'width' => size, 'height' => size})
+  end  
+end
+
+# Not sure if this needs to be included since the swing bus is included
+# class Substation < Node
+#   def props
+#     super.merge({
+#       'shape' => 'cylinder',
+#       'width' => '0.2',
+#       'height' => '0.2',
+#       'fillcolor' => '5'
+#     })
+#   end
+# end
+
 
 class Switch < Edge
   def props
