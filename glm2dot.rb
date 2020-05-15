@@ -459,7 +459,11 @@ end
 
 class Switch < Edge
   def props
-    super.merge({'color' => '4', 'penwidth' => '5'})
+    if self[:status] == 'CLOSED'
+      super.merge({'color' => '4', 'penwidth' => '5'})
+    else
+      super.merge({'color' => '6', 'penwidth' => '5'})
+    end
   end
 end
 
