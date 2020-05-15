@@ -10,10 +10,10 @@ GLMWrangler is © 2012 by Michael A. Cohen and Christopher Saunders. It is relea
 
 ## Dependencies
 
-glm2dot was most recently tested by the authors with
+glm2dot was most recently tested with
 
-- Ruby 2.1.5
-- Graphviz 2.38
+- Ruby 2.3.7
+- Graphviz 2.40.1
 
 and will likely work with those versions or newer.
 
