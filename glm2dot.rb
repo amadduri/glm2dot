@@ -3,7 +3,7 @@
 # This software is (c) 2012 Michael A. Cohen
 # It is released under the simplified BSD license, which can be found at:
 # http://www.opensource.org/licenses/BSD-2-Clause
-# 
+#
 # glm2dot.rb converts gridlab-d feeder model (.glm) files into graphviz DOT
 # (.dot) files for visual rendering. Specifically it was designed
 # for and works well with the official "taxonomy" feeders at
@@ -27,13 +27,17 @@
 # Graphviz supports *many* output formats besides pdf; for more options,
 # see the graphviz documentation at http://graphviz.org
 
+# note the accent8 color scheme has the following colors:
+# 1=green, 2=purple, 3=peach, 4=yellow, 5=blue, 6=dark pink, 7=brown, 8=gray
+
+
 # some string helper functions
 class String
   # take a string like "my_class" and make it into "MyClass"
   def to_class_name
     self.split('_').each{|w| w.capitalize!}.join('')
   end
-  
+
   # take a string like "R1-12-47-1_tm_598;" and make it into "tm598"
   # (makes node identifiers more succinct)
   def core
@@ -52,16 +56,20 @@ end
 module GrabInfo
   # number of output inches per W**(1/2) of load
   LOAD_SCALE = 0.002
-  
+
   # Returs nil if this node has no real power load
   def size_from_power
     pow = 0
     # note that for multi-phase loads, we just sum the real power draw
-    # across the phases
-    each {|k, v| pow += v.sub(/.*?\*/, '').to_c.abs if k.to_s =~ /^(constant_)power(_[A-C])_real/}
+    # across the phases N.B. commented out for the version below
+    # each {|k, v| pow = v.sub(/.*?\*/, '').to_c.abs if k.to_s =~ /^(constant_)power(_[A-C])_real/}
+
+    # note 2:  we are using just one of the phase powers (the last one)
+    # for multi-phase loads to improve visualization
+    each {|k, v| pow = v.sub(/.*?\*/, '').to_c.abs if k.to_s =~ /^(constant_)power(_[A-C])_real/}
     pow == 0 ? nil : (Math.sqrt(pow) * LOAD_SCALE).to_s
   end
-  
+
   def size_from_inverter
     pow = 0
     # note that for multi-phase loads, we just sum the real power draw
@@ -69,60 +77,61 @@ module GrabInfo
     each {|k, v| pow += v.delete('^0-9').to_c.abs if k.to_s =~ /^rated_power/}
     pow == 0 ? nil : (Math.sqrt(pow) * LOAD_SCALE).to_s
   end
-  
+
   def size_from_area
     area = 0
     each {|k, v| area += v.to_f if k.to_s =~ /^floor_area/}
     area == 0? nil : (Math.sqrt(area) * LOAD_SCALE).to_s
   end
-  
+
   def size_from_solar_area
     area = 0
     each {|k, v| area += v.to_f if k.to_s =~ /^area/}
     area == 0? nil : (Math.sqrt(area) * LOAD_SCALE * 10.0).to_s
   end
-  
+
   def get_groupid
     groupid = nil
     each {|k, v| groupid = v.to_s if k.to_s =~ /^groupid/}
     groupid
   end
-  
+
 end
 
 # GLMConverter is the main class that loops through the input file, farms
 # out the parsing of various objects, then coordinates the writing of the
 # .dot file.
 class GLMConverter
-  VERSION = '0.1'
-  
+  VERSION = '0.1.1'
+
   def initialize(infilename, outfilename, creator = '')
+    require 'etc'
     @infilename = infilename
     @outfilename = outfilename
-    @creator = creator.nil? || creator.empty? ? '[unknown]' : creator
+    @creator = creator.nil? || creator.empty? ? Etc.getlogin.to_s : creator
     # note configs aren't used for anything currently
     @lists = {:nodes => [], :edges => [], :configs => []}
   end
-  
+
   # Parse the .glm input file into ruby objects
   def parse
     infile = File.open @infilename
-    
-    while l = infile.gets do  
-      if l =~ /^object/        
+
+    while l = infile.gets do
+      if l =~ /^object/
         # we've found a line like "object capacitor:2076 {"
         # the index is "capacitor:2076"
         index = l.split[1].chomp(';')
         # the type is "capacitor"
         type = index.split(':')[0].chomp('{')
-        
+
         # gather up all the lines of input that define the current object
         # into lines
         lines = []
         lines << (l = infile.gets) until l =~ /^\s*\}/
         # remove the last line, "}"
         lines.pop
-        
+
         # see if there's a class (defined below) that corresponds to the type
         # of object we've found
         klass = Module.const_get(type.to_class_name) rescue nil
@@ -132,10 +141,10 @@ class GLMConverter
           puts "Parsing #{index}"
           obj = klass.new lines
           obj[:name] = index if obj[:name].nil?
-          
+
           # add the new object to the appropriate list (:nodes, :edges, etc.)
           @lists[obj.list] << obj
-          
+
           # if the new object has a "parent" attribute, create and save
           # a dummy edge linking the parent to the new object
           if obj[:parent]
@@ -148,10 +157,10 @@ class GLMConverter
         end
       end
     end
-    
+
     infile.close
   end
-  
+
   # write out a DOT file based on the parsed objects
   def write
     outfile = File.open @outfilename, 'w'
@@ -175,10 +184,10 @@ end
 # that generates a hash of the DOT properties for the object and a
 # #to_s method that returns the entire DOT file line for the object
 class GLMObject < Hash
-  def initialize(lines) 
+  def initialize(lines)
     lines.each do |l|
       s = l.strip.chomp(';').split
-      
+
       if !s.empty?
         prop_name = s.shift.strip
         prop_val = s.join
@@ -188,26 +197,26 @@ class GLMObject < Hash
         method_sym = ("tweak_" + prop_name).to_sym
         self[prop_name.to_sym] = respond_to?(method_sym) ? send(method_sym, prop_val) : prop_val
       end
-      
+
     end
   end
-  
+
   # The following tweak methods "core" node names so they are more succinct
   # (see the String helper methods above)
   # If you prefer the full-length node names, just comment these out!
-  
+
   def tweak_name(n)
     n.core
   end
-  
+
   def tweak_to(t)
     t.core
   end
-  
+
   def tweak_from(f)
     f.core
   end
-  
+
   def tweak_parent(p)
     p.core
   end
@@ -221,7 +230,7 @@ class Node < GLMObject
   def list
     :nodes
   end
-  
+
   # The default Node generates properties causing it to render as a point
   # If the node is the SWING bus, it renders more visibly
   # Of course, descendants of this class can override this method to cause
@@ -233,7 +242,7 @@ class Node < GLMObject
          'style' => 'filled'
     }
     if self[:bustype] == 'SWING'
-      p.merge!({'shape' => 'doubleoctagon', 
+      p.merge!({'shape' => 'doubleoctagon',
                 'width' => '0.1',
                 'height' => '0.1',
                 'color' => '6'
@@ -241,7 +250,7 @@ class Node < GLMObject
     end
     p
   end
-  
+
   # The line of DOT code defined by a Node
   def to_s
     s = self[:name] + ' ['
@@ -251,17 +260,17 @@ class Node < GLMObject
 end
 
 # base class for all GLMObjects that are treated as edges
-class Edge < GLMObject    
+class Edge < GLMObject
   LEN_SCALE = 0.005 # DOT inches per GLM foot
   MIN_LEN = '0.25' # minimum length of any edge in DOT inches (for visibility)
   # edges with specified lengths are "weighted" heavier to ensure that graphviz
   # doesn't distort their lengths too liberally.
   WEIGHT_FOR_SPECIFIED = '5'
-  
+
   def list
     :edges
   end
-  
+
   # create a dummy edge; for linking parents to children
   def self.dummy(from, to)
     e = self.new []
@@ -269,7 +278,7 @@ class Edge < GLMObject
     e[:to] = to
     e
   end
-  
+
   def props
     if self[:length].nil?
       {"len" => MIN_LEN}
@@ -279,7 +288,7 @@ class Edge < GLMObject
       }
     end
   end
-  
+
   # The line of DOT code defined by an Edge
   def to_s
     s = "#{self[:from]} -- #{self[:to]} ["
@@ -304,12 +313,12 @@ end
 class Regulator < Edge
   def props
     super.merge({'color' => '1:8:1', 'penwidth' => '3'})
-  end 
+  end
 end
 
 class RegulatorConfiguration < GLMConfig
 end
-  
+
 class Capacitor < Node
   def props
     super.merge({
@@ -318,18 +327,18 @@ class Capacitor < Node
       'height' => '0.2',
       'fillcolor' => '1'
     })
-  end  
+  end
 end
 
 class Fuse < Edge
   def props
     super.merge({'color' => '6', 'penwidth' => '5'})
-  end  
+  end
 end
 
 class Inverter < Node
   include GrabInfo
-  
+
   def props
     p = super.merge({
       'shape' => 'doublecircle',
@@ -339,7 +348,7 @@ class Inverter < Node
     })
     size = size_from_inverter
     p.merge({'width' => size, 'height' => size})
-  end  
+  end
 end
 
 class LineConfiguration < GLMConfig
@@ -351,7 +360,7 @@ end
 
 class Load < Node
   include GrabInfo
-  
+
   def props
     p = super
     size = size_from_power
@@ -390,17 +399,17 @@ class Meter < Node
   def props
     super.merge({
       'shape' => 'circle',
-      'width' => '0.2',
-      'height' => '0.2',
-      'fillcolor' => '2'
+      'width' => '0.1',
+      'height' => '0.1',
+      'fillcolor' => '8'
     })
-  end  
+  end
 end
 
 class OverheadLine < Edge
   def props
     super.merge({'color' => '5', 'penwidth' => '2'})
-  end  
+  end
 end
 
 # Not sure if we need to do anything with this object at this time
@@ -410,12 +419,12 @@ end
 class Recloser < Edge
   def props
     super.merge({'color' => '6:8:6', 'penwidth' => '3'})
-  end  
+  end
 end
 
 class Solar < Node
   include GrabInfo
-  
+
   def props
     p = super.merge({
       'shape' => 'parallelogram',
@@ -425,32 +434,39 @@ class Solar < Node
     })
     size = size_from_solar_area
     p.merge({'width' => size, 'height' => size})
-  end  
+  end
 end
 
 # Not sure if this needs to be included since the swing bus is included
-# class Substation < Node
-#   def props
-#     super.merge({
-#       'shape' => 'cylinder',
-#       'width' => '0.2',
-#       'height' => '0.2',
-#       'fillcolor' => '5'
-#     })
-#   end
-# end
+class Substation < Node
+  def props
+    p = {'label' => '',
+         'xlabel' => self[:name],
+         'shape' => 'point',
+         'style' => 'filled'
+    }
+    if self[:bustype] == 'SWING'
+      p.merge!({'shape' => 'doubleoctagon',
+                'width' => '0.1',
+                'height' => '0.1',
+                'color' => '6'
+      })
+    end
+    p
+  end
+end
 
 
 class Switch < Edge
   def props
     super.merge({'color' => '4', 'penwidth' => '5'})
-  end 
+  end
 end
 
 class Transformer < Edge
   def props
     super.merge({'color' => '1', 'penwidth' => '5'})
-  end 
+  end
 end
 
 class TransformerConfiguration < GLMConfig
@@ -462,15 +478,15 @@ end
 class TriplexLine < Edge
   def props
     super.merge({'color' => '8'})
-  end  
+  end
 end
 
 class TriplexMeter < Node
   include GrabInfo
-  
+
   def props
     groupid = get_groupid
-    
+
     if groupid == 'Commercial_Meter'
       super.merge({
       'shape' => 'circle',
@@ -491,11 +507,11 @@ end
 
 class TriplexNode < Node
   include GrabInfo
-  
+
   def props
     p = super
     size = size_from_power
-    
+
     if size == nil
       p.merge!({'shape' => 'triangle',
                 'fillcolor' => '7',
@@ -516,7 +532,7 @@ end
 
 class House < Node
   include GrabInfo
-  
+
   def props
     p = super
     size = size_from_area
@@ -547,7 +563,7 @@ end
 class UndergroundLine < Edge
   def props
     super.merge({'color' => '7', 'penwidth' => '2'})
-  end  
+  end
 end
 
 # Ignoring Recorders for now because when their parent is an edge (e.g. a
@@ -563,7 +579,7 @@ end
 #     super lines
 #     self[:name] = "recorder_for_#{self[:parent]}" if self[:name].nil?
 #   end
-#  
+#
 #   def props
 #     super.merge({
 #       'shape' => 'note',
@@ -571,7 +587,7 @@ end
 #       'height' => '0.2',
 #       'fillcolor' => 'yellow'
 #     })
-#   end  
+#   end
 # end
 
 # Main execution of the script.  Just grabs the parameters and tells
