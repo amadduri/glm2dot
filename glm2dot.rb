@@ -462,7 +462,7 @@ class Switch < Edge
     if self[:status] == 'CLOSED'
       super.merge({'color' => '4', 'penwidth' => '5'})
     else
-      super.merge({'color' => '6', 'penwidth' => '5'})
+      super.merge({'color' => '8', 'penwidth' => '3', 'style' => 'dashed'})
     end
   end
 end
