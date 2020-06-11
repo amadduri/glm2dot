@@ -195,7 +195,9 @@ class GLMObject < Hash
         # the file. If we define a method with the right name (like tweak_name)
         # then it will be called to modify the property's value before continuing
         method_sym = ("tweak_" + prop_name).to_sym
-        self[prop_name.to_sym] = respond_to?(method_sym) ? send(method_sym, prop_val) : prop_val
+        # NOTE: modified the line below to not overwrite already defined Variables
+        # this was happening for recorders that were declared within a parent object.
+        (self[prop_name.to_sym] = respond_to?(method_sym) ? send(method_sym, prop_val) : prop_val) if self[prop_name.to_sym].nil?
       end
 
     end
