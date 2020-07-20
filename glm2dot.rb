@@ -41,6 +41,14 @@ class String
   # take a string like "R1-12-47-1_tm_598;" and make it into "tm598"
   # (makes node identifiers more succinct)
   def core
+    # Removes "" around names
+    self.delete('"')
+    if '"'.include?(self[0])
+      self[0] = ''
+      self[-1] = ''
+    end
+    # Adds the letter n before a numeric name, graphviz has trouble with names
+    # that start with numerals
     if '0123456789'.include?(self[0])
       self.prepend('n')
     end
@@ -75,7 +83,7 @@ module GrabInfo
     # note that for multi-phase loads, we just sum the real power draw
     # across the phases
     each {|k, v| pow += v.delete('^0-9').to_c.abs if k.to_s =~ /^rated_power/}
-    pow == 0 ? nil : (Math.sqrt(pow) * LOAD_SCALE).to_s
+    pow == 0 ? nil : (Math.sqrt(pow*1000) * LOAD_SCALE).to_s
   end
 
   def size_from_area
@@ -86,8 +94,12 @@ module GrabInfo
 
   def size_from_solar_area
     area = 0
+    efficiency = 0
     each {|k, v| area += v.to_f if k.to_s =~ /^area/}
-    area == 0? nil : (Math.sqrt(area) * LOAD_SCALE * 10.0).to_s
+    each {|k, v| efficiency = v.to_f if k.to_s =~ /^efficiency/}
+    # puts "Efficiency= #{efficiency} and area = #{area}"
+    efficiency == 0? 0.2 : efficiency
+    area == 0? nil : (Math.sqrt(area * efficiency * 92.9) * LOAD_SCALE).to_s
   end
 
   def get_groupid
@@ -104,10 +116,11 @@ end
 class GLMConverter
   VERSION = '0.1.1'
 
-  def initialize(infilename, outfilename, creator = '')
+  def initialize(infilename, outfilename, method = 'neato', creator = '')
     require 'etc'
     @infilename = infilename
     @outfilename = outfilename
+    @method = method
     @creator = creator.nil? || creator.empty? ? Etc.getlogin.to_s : creator
     # note configs aren't used for anything currently
     @lists = {:nodes => [], :edges => [], :configs => []}
@@ -168,6 +181,18 @@ class GLMConverter
     outfile.puts 'graph "' + feeder_name + '" {'
     outfile.puts "label=\"Feeder #{feeder_name} Scale: 1in = #{1/Edge::LEN_SCALE}ft Created by #{@creator} using glm2dot.rb version #{VERSION} on #{Time.now}\";"
     outfile.puts 'fontsize="24";'
+    if @method == 'sfdp'
+      outfile.puts 'layout=fdp;'
+      outfile.puts 'K=1;'
+    else
+      outfile.puts 'layout=neato;'
+      outfile.puts 'epsilon=.00001'
+      outfile.puts 'mode="major"'
+      outfile.puts 'packMode="node"'
+      outfile.puts 'start="self"'
+    end
+    outfile.puts 'outputorder="nodesfirst";'
+    outfile.puts 'forcelabels=true;'
     outfile.puts 'node [fontname="Helvetica", fontcolor="/x11/gray50", fontsize="8", colorscheme="accent8"];'
     outfile.puts 'edge [colorscheme="accent8"];'
     @lists[:nodes].each {|n| outfile.puts n.to_s}
@@ -247,7 +272,8 @@ class Node < GLMObject
       p.merge!({'shape' => 'doubleoctagon',
                 'width' => '0.1',
                 'height' => '0.1',
-                'color' => '6'
+                'color' => '6',
+                'root' => 'true'
       })
     end
     p
@@ -325,8 +351,8 @@ class Capacitor < Node
   def props
     super.merge({
       'shape' => 'doublecircle',
-      'width' => '0.2',
-      'height' => '0.2',
+      'width' => '0.05',
+      'height' => '0.05',
       'fillcolor' => '1'
     })
   end
@@ -369,7 +395,7 @@ class Load < Node
     groupid = get_groupid
     unless size.nil?
       if groupid == 'CommLoads'
-        p.merge!({'shape' => 'invtriangle',
+        p.merge!({'shape' => 'invhouse',
                   'fillcolor' => '2',
                   'height' => size,
                   'width' => size
@@ -451,7 +477,8 @@ class Substation < Node
       p.merge!({'shape' => 'doubleoctagon',
                 'width' => '0.1',
                 'height' => '0.1',
-                'color' => '6'
+                'color' => '6',
+                'root' => 'true'
       })
     end
     p
@@ -545,7 +572,7 @@ class House < Node
     groupid = get_groupid
     unless size.nil?
       if groupid == 'Commercial'
-        p.merge!({'shape' => 'invtriangle',
+        p.merge!({'shape' => 'invhouse',
                   'fillcolor' => '2',
                   'height' => size,
                   'width' => size
