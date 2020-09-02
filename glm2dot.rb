@@ -211,7 +211,8 @@ end
 class GLMObject < Hash
   def initialize(lines)
     lines.each do |l|
-      s = l.strip.chomp(';').split
+      #Remove end of lcomments
+      s = l.split('//').shift.strip.chomp(';').split
 
       if !s.empty?
         prop_name = s.shift.strip
